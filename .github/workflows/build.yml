@@ -1,4 +1,4 @@
-name: Build plain text pages
+name: Build plain text from any webpage
 
 on:
   push:
@@ -14,7 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch and create plain text files
+      - name: Install html2text
+        run: sudo apt-get update && sudo apt-get install -y html2text
+
+      - name: Fetch and extract plain text
         run: |
           mkdir -p build
           
@@ -25,24 +28,22 @@ jobs:
             exit 1
           fi
           
-          # پردازش هر مسیر
           echo "$ROUTE_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read slug url; do
             echo "Processing $slug -> $url"
             mkdir -p "build/$slug"
-            # دریافت محتوا (متن خام)
-            content=$(curl -sL "$url")
-            if [ $? -eq 0 ] && [ -n "$content" ]; then
-              # مستقیماً محتوا را در فایل index.html بنویسید (بدون هیچ تگی)
-              echo "$content" > "build/$slug/index.html"
-            else
-              echo "Failed to fetch content" > "build/$slug/index.html"
-            fi
+            # دریافت صفحه (حتی اگر HTML باشد)
+            curl -sL "$url" > temp.html
+            # تبدیل HTML به متن ساده (بدون هیچ تگی)
+            html2text -utf8 temp.html > plain.txt
+            # حذف خطوط خالی اضافی (اختیاری)
+            sed -i '/^$/d' plain.txt
+            content=$(cat plain.txt)
+            # ذخیره مستقیم متن ساده در فایل index.html
+            echo "$content" > "build/$slug/index.html"
+            rm temp.html plain.txt
           done
           
-          # صفحه اصلی (اختیاری)
           echo "Use /text1 or /text2" > build/index.html
-          
-          # صفحه 404 برای مسیرهای ناشناخته (بدون تگ، فقط متن)
           echo "404 - Not found" > build/404.html
 
       - name: Deploy to gh-pages
