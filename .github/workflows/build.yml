@@ -3,7 +3,7 @@ name: Build pages from external texts
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:   # اجازه اجرای دستی
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,33 +14,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install html2text
+        run: sudo apt-get update && sudo apt-get install -y html2text
+
       - name: Fetch texts and create pages
         run: |
           mkdir -p build
           
-          # خواندن نقشه از secret
           ROUTE_JSON='${{ secrets.ROUTE_MAP }}'
           
-          # بررسی وجود secret
           if [ -z "$ROUTE_JSON" ] || [ "$ROUTE_JSON" = "" ]; then
             echo "ERROR: ROUTE_MAP secret is empty" > build/index.html
           else
-            # پردازش هر کلید (slug)
             echo "$ROUTE_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read slug url; do
               echo "Processing $slug -> $url"
               mkdir -p "build/$slug"
-              # دریافت محتوا از آدرس خارجی
-              content=$(curl -sL "$url")
-              if [ $? -eq 0 ] && [ -n "$content" ]; then
-                # جایگزینی در قالب
-                sed "s|__CONTENT__|$content|" template.html > "build/$slug/index.html"
-              else
-                echo "Failed to fetch $url" > "build/$slug/index.html"
-              fi
+              # واكشى صفحه (حتی اگر HTML باشد)
+              curl -sL "$url" > temp_page.html
+              # تبديل HTML به متن خالص
+              html2text -utf8 temp_page.html > plain.txt
+              # خواندن متن خالص
+              content=$(cat plain.txt)
+              # قرار دادن در قالب
+              sed 's/__CONTENT__/'"$(echo "$content" | sed 's/[&/\]/\\&/g')"'/' template.html > "build/$slug/index.html"
+              rm temp_page.html plain.txt
             done
           fi
           
-          # ساخت صفحه 404 پیش‌فرض (برای مسیرهای ناشناخته)
+          # صفحه 404
           cat > build/404.html << 'EOF'
           <!DOCTYPE html>
           <html dir="rtl" lang="fa">
@@ -52,7 +53,6 @@ jobs:
           </html>
           EOF
           
-          # صفحه اصلی (اختیاری)
           echo '<html>از آدرس‌های /text1 یا /text2 استفاده کنید</html>' > build/index.html
 
       - name: Deploy to gh-pages branch
