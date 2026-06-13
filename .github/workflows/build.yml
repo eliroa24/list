@@ -1,4 +1,4 @@
-name: Build plain text from individual secrets
+name: Build plain text from any webpage
 
 on:
   push:
@@ -21,26 +21,26 @@ jobs:
         run: |
           mkdir -p build
           
-          # لیست اسلاگ‌های مجاز (همینجا قابل مشاهده است)
-          SLUGS="text1 text2 text3"
+          ROUTE_JSON='${{ secrets.ROUTE_MAP }}'
           
-          for slug in $SLUGS; do
-            # ساخت نام secret متناظر با حروف بزرگ
-            secret_name="${slug^^}_URL"   # مثلاً text1 -> TEXT1_URL
-            # دسترسی به secret از طریق env (در مرحله بعد تعریف می‌شود)
-            url="${!secret_name}"
-            if [ -n "$url" ]; then
-              echo "Processing $slug -> $url"
-              mkdir -p "build/$slug"
-              curl -sL "$url" > temp.html
-              html2text -utf8 temp.html > plain.txt
-              sed -i '/^$/d' plain.txt
-              content=$(cat plain.txt)
-              echo "$content" > "build/$slug/index.html"
-              rm temp.html plain.txt
-            else
-              echo "No secret found for $slug" > "build/$slug/index.html"
-            fi
+          if [ -z "$ROUTE_JSON" ]; then
+            echo "ROUTE_MAP secret is empty" > build/index.html
+            exit 1
+          fi
+          
+          echo "$ROUTE_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read slug url; do
+            echo "Processing $slug -> $url"
+            mkdir -p "build/$slug"
+            # دریافت صفحه (حتی اگر HTML باشد)
+            curl -sL "$url" > temp.html
+            # تبدیل HTML به متن ساده (بدون هیچ تگی)
+            html2text -utf8 temp.html > plain.txt
+            # حذف خطوط خالی اضافی (اختیاری)
+            sed -i '/^$/d' plain.txt
+            content=$(cat plain.txt)
+            # ذخیره مستقیم متن ساده در فایل index.html
+            echo "$content" > "build/$slug/index.html"
+            rm temp.html plain.txt
           done
           
           echo "Use /text1 or /text2" > build/index.html
@@ -52,7 +52,3 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
           publish_branch: gh-pages
-        env:
-          TEXT1_URL: ${{ secrets.TEXT1_URL }}
-          TEXT2_URL: ${{ secrets.TEXT2_URL }}
-          TEXT3_URL: ${{ secrets.TEXT3_URL }}
